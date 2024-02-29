@@ -17,33 +17,27 @@ from typing import Callable, List, Union
 
 import emergence.utils.log
 
-class BaseCalc(metaclass = ABCMeta):
+
+class EmergenceCalc(metaclass = ABCMeta):
     """
-    Computes quanities related to causal emergence using a given MutualInfo calculator
-    function on time series X and V
+    Computes quanities related to causal emergence using a given MutualInfo
+    calculator function and some data describing a system of micro variables X
+    (sources) and macro feature V (target)
     """
     @abstractmethod
     def __init__(self,
-            X: np.ndarray, V: np.ndarray,
-            mutualInfo: Callable[[np.ndarray, np.ndarray, bool, int], float],
+            X: np.ndarray, V: np.ndarray, mutualInfo: Callable,
             pointwise: bool = False, dt: int = 1, filename: str = ''
         ) -> None:
         """
-        Initialise class with the time series corresponding to the parts Xs and
-        the whole V, and set any properties for the computation. By default, works
-        with multivariate systems, so if any txn 2D array of t states of n scalar
-        variable is passed, reshape the array to (t, n, 1) first.
-
         Params
         ------
         X
-            system micro variables of shape (t, n, d) for n d-dimensional time
-            series corresponding to the 'parts' in the system
+            system micro variables corresponding to the 'parts' or 'sources'
         V
-            candidate emergence feature: d-dimensional system macro variable of
-            shape (t, d)
+            system macro variable of corresponding to the 'whole' or 'target'
         mutualInfo
-            mutual information function to use from MutualInfo class
+            mutual information function
         pointwise
             whether to use pointwise (p log p) or Shannon (sum p log p) MI
         dt
@@ -51,39 +45,9 @@ class BaseCalc(metaclass = ABCMeta):
         filename
             if set, save the object to a file
         """
-        logging.info(f"Initialise Emergence Calculator using {'pointwise' if pointwise else 'Shannon'} mutual information with t'=t+{dt}")
-        logging.info(f"  and MI estimator {mutualInfo.__name__}")
-
-        if len(X.shape) < 3:
-            X = np.atleast_3d(X)
-        if len(V.shape) < 2:
-            V = V[:, np.newaxis]
-
-        (t, n, d) = X.shape
-        self.n = n
-        self.V = V
-        self.X = [ X[:, i] for i in range(n) ]
-        logging.info(f"  for {n} {d}-dimensional variables and {V.shape[1]}-dimensional macroscopic feature")
-        logging.info(f"  as time series of length {t}")
-
-        logging.info(f"Computing mutual informations: MI(V[t], V[t+{dt}])")
-        self.vmiCalc = mutualInfo(V,  V,  pointwise, dt)
-
-        logging.info(f"Computing mutual informations: MI(Xi[t], V[t+{dt}])")
-        self.xvmiCalcs = dict()
-        for i in range(n):
-            self.xvmiCalcs[i] = mutualInfo(self.X[i], V, pointwise, dt)
-
-        logging.info(f"Computing mutual informations: MI(V[t], Xi[t+{dt}])")
-        self.vxmiCalcs = dict()
-        for i in range(n):
-            self.vxmiCalcs[i] = mutualInfo(V, self.X[i], pointwise, dt)
-
-        logging.info(f"Computing mutual informations: MI(Xi[t], Xj[t+{dt}])")
-        self.xmiCalcs = dict()
-        for i in range(n):
-            for j in range(n):
-                self.xmiCalcs[(i, j)] = mutualInfo(self.X[i], self.X[j], pointwise, dt)
+        logging.info(f"Initialised Emergence Calculator for system of {self.n} variables")
+        logging.info(f"   with time delay {dt} between sources and target")
+        logging.info(f"   using mutual information function {mutualInfo.__name__}")
 
         if filename:
             logging.info(f"Dumping EmergenceCalc object with all pairwise MI to {name}_calc.pkl")
@@ -108,8 +72,8 @@ class BaseCalc(metaclass = ABCMeta):
             size of the set of sources being considered in the redundancy
             calculation
         """
-        if q > n - 1:
-            err = f"Order of correction q={q} must be strictly smaller than number of sources n={n}"
+        if q > n:
+            err = f"Order of correction q={q} must be smaller than number of sources n={n}"
             logging.error(err)
             raise ValueError(err)
         if r > n or r < n - q + 1:
@@ -169,11 +133,10 @@ class BaseCalc(metaclass = ABCMeta):
         return corr
 
 
-    @abstractmethod
     def psi(self, q: int = 0) -> Union[float, List[float]]:
         """
-        Use MI quantities computed in the intialiser to derive practical criterion
-        for emergence.
+        Compute the Psi measure as the difference between how the sources jointly
+        and individually predict the target.
 
             Psi = Synergy - Redundancy + Correction
 
@@ -200,34 +163,40 @@ class BaseCalc(metaclass = ABCMeta):
         if q:
             msg += f" using redundancy correction of order {q}"
         logging.info(msg)
-        if q > self.n - 1:
-            err = f"Order of correction q={q} must be strictly smaller than number of sources n={self.n}"
+        if q > self.n:
+            err = f"Order of correction q={q} must be smaller than number of sources n={self.n}"
             logging.error(err)
             raise ValueError(err)
+        syn  = self.vmiCalc
+        red  = sum(xvmi for xvmi in self.xvmiCalcs.values())
+        corr = self._lattice_expansion(q)
+        return syn - red + corr
 
 
-    @abstractmethod
     def gamma(self) -> Union[float, List[float]]:
         """
-        Use MI quantities computed in the intialiser to derive practical criterion
-        for emergence.
+        Compute the causal decoupling Gamma measure as the maximum mutual info
+        between the target and each individual source
 
             Gamma = max_j I(V(t); X_j(t'))
 
         where  t' - t = self.dt
         """
-        pass
+        gamma = max(self.vxmiCalcs.values())
+        return gamma
 
-    @abstractmethod
     def delta(self) -> Union[float, List[float]]:
-
         """
-        Use MI quantities computed in the intialiser to derive practical criterion
-        for emergence.
+        Compute the downward causation Delta measure as the maximum difference
+        between the mutual information between the target and each source and
+        the sum of mutual information between that source and all other sources
 
             Delta = max_j (I(V(t);X_j(t')) - sum_i I(X_i(t); X_j(t'))
 
         where  t' - t = self.dt
         """
-        pass
+        delta = max(vx - sum(self.xmiCalcs[(i, j)] for i in range(self.n))
+                    for j, vx in enumerate(self.vxmiCalcs.values()) )
+        return delta
+
 
