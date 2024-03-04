@@ -105,7 +105,7 @@ class EmergenceCalc(metaclass = ABCMeta):
 
 
     def _lattice_expansion(self,
-            calcs: Dict[Any, Any], n: int, q: int = 0
+            calcs: Dict[float, float], n: int, q: int = 0
         ) -> List[int]:
         """
         Expand PID latice for qth order correction.
@@ -148,14 +148,10 @@ class EmergenceCalc(metaclass = ABCMeta):
         Compute the Psi measure as the difference between how the sources jointly
         and individually predict the target.
 
-            Psi = Synergy - Redundancy + Correction
+            Psi = I(V(t); V(t')) - sum_i I(X_i(t); V(t')) + correction
 
-        where:
-            Synergy     MI(V(t); V(t'))
-            Redundancy  sum_i MI(X_i(t); V(t'))
-            Correction  lattice_expansion(MI(X(t);V(t')), q)
-
-        where  t' - t = self.dt
+        where the correction refers to adding back double counted redundancy in
+        the I(X(t); V(t')) term, and t' - t = self.dt
 
         Params
         ------
@@ -195,18 +191,31 @@ class EmergenceCalc(metaclass = ABCMeta):
         gamma = max(self.vxmiCalcs.values())
         return gamma
 
+
     def delta(self) -> Union[float, List[float]]:
         """
         Compute the downward causation Delta measure as the maximum difference
         between the mutual information between the target and each source and
         the sum of mutual information between that source and all other sources
 
-            Delta = max_j (I(V(t);X_j(t')) - sum_i I(X_i(t); X_j(t'))
+            Delta = max_j (I(V(t);X_j(t')) - sum_i I(X_i(t); X_j(t') + correction)
 
-        where  t' - t = self.dt
+        where the correction refers to adding back double counted redundancy in
+        the I(X(t); X_j(t')) term, and t' - t = self.dt
         """
-        delta = max(vx - sum(self.xmiCalcs[(i, j)] for i in range(self.n))
-                    for j, vx in enumerate(self.vxmiCalcs.values()) )
+        msg = "Computing Delta"
+        if q:
+            msg += f" using redundancy correction of order {q}"
+        logging.info(msg)
+        if q > self.n:
+            err = f"Order of correction q={q} must be smaller than number of sources n={self.n}"
+            logging.error(err)
+            raise ValueError(err)
+
+        xmiCalcs = lambda j: { i: self.xmiCalcs[(i, j)] for i in range(self.n) }
+        delta = max(
+            vx - sum(xmiCalcs(j).values()) + self._lattice_expansion(xmiCalcs(j), self.n, q)
+            for j, vx in enumerate(self.vxmiCalcs.values()) )
         return delta
 
 
