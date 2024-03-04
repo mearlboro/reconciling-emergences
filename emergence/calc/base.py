@@ -13,7 +13,7 @@ import logging
 import math
 import numpy as np
 import pickle
-from typing import Callable, List, Union
+from typing import Any, Callable, Dict, List, Union
 
 import emergence.utils.log
 
@@ -88,21 +88,25 @@ class EmergenceCalc(metaclass = ABCMeta):
                                 for s in range(n - q + 1, r) )
 
 
-    def _intersection_info(self, ixs: List[int]) -> float:
+    def _intersection_info(self, calcs: Dict[Any, Any], ixs: List[int]) -> float:
         """
         Compute intersection information of all terms with indices in the given
         list, i.e. the minimum mutual info
 
         Params
         ------
+        calcs
+            list of MI calculators to select from
         ixs
             list of indices representing information atoms
         """
-        infos = [ self.xvmiCalcs[i] for i in ixs ]
+        infos = [ calcs[i] for i in ixs ]
         return min(infos)
 
 
-    def _lattice_expansion(self, q: int = 0) -> List[int]:
+    def _lattice_expansion(self,
+            calcs: Dict[Any, Any], n: int, q: int = 0
+        ) -> List[int]:
         """
         Expand PID latice for qth order correction.
         Given a system of size n (i.e. n sources), corrections are supported
@@ -110,15 +114,21 @@ class EmergenceCalc(metaclass = ABCMeta):
         subtracting) the intersection information from expanding the lattice.
         The intersection (redundant) info is defined as minimal mutual info (MMI)
 
-        - The 1st order correction adds the MMI of all n redundant atoms to the
-        uncorrected Psi.
+        - The 1st order correction adds the MMI of all n redundant atoms
         - The 2nd order correction adds a sum of MMIs over sets of n-1 redundant
-        atoms and subtracts the MMI of all n redundant atoms.
+        atoms and subtracts the MMI of all n redundant atoms
         - The qth order correction adds sums over MMI over sets of n-q+1 redundant
         atoms and subtracts the MMI over sets of n-q+2 atoms, and so on
-        """
-        n = self.n
 
+        Params
+        ------
+        calcs
+            list of MI calculators to select from
+        n
+            number of sources
+        q
+            order of correction
+        """
         corr = 0
 
         for r in range(n - q + 1, n + 1):
@@ -128,7 +138,7 @@ class EmergenceCalc(metaclass = ABCMeta):
             logging.info(f"with {len(atom_sets)} sets with coefficient {coef}")
 
             corr += sum(
-                coef * self._intersection_info(ixs) for ixs in atom_sets )
+                coef * self._intersection_info(calcs, ixs) for ixs in atom_sets )
 
         return corr
 
@@ -169,7 +179,7 @@ class EmergenceCalc(metaclass = ABCMeta):
             raise ValueError(err)
         syn  = self.vmiCalc
         red  = sum(xvmi for xvmi in self.xvmiCalcs.values())
-        corr = self._lattice_expansion(q)
+        corr = self._lattice_expansion(self.xvmiCalcs, self.n, q)
         return syn - red + corr
 
 
