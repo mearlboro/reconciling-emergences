@@ -50,9 +50,9 @@ def _MICalcAvg(calcName: Callable[None, str]) -> Union[np.ndarray, float]:
 
         # we displace the second array to compute time delays
         if 'Discrete' in calcName():
-            jX, jY = (JVM.javify(X[dt:], jp.JInt), JVM.javify(Y[:-dt], jp.JInt))
+            jX, jY = (JVM.javify(X[:-dt], jp.JInt), JVM.javify(Y[dt:], jp.JInt))
         else:
-            jX, jY = (JVM.javify(X[dt:], jp.JDouble), JVM.javify(Y[:-dt], jp.JDouble))
+            jX, jY = (JVM.javify(X[:-dt], jp.JDouble), JVM.javify(Y[dt:], jp.JDouble))
 
         # the discrete MI calc in JIDT is initialised with alphabet sizes and
         # data must be added incrementally by .addObservations(int[], int[])
