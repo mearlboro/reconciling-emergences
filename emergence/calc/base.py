@@ -192,7 +192,7 @@ class EmergenceCalc(metaclass = ABCMeta):
         return gamma
 
 
-    def delta(self) -> Union[float, List[float]]:
+    def delta(self, q: int = 0) -> Union[float, List[float]]:
         """
         Compute the downward causation Delta measure as the maximum difference
         between the mutual information between the target and each source and
