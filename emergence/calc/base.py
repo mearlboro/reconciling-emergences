@@ -50,9 +50,9 @@ class EmergenceCalc(metaclass = ABCMeta):
         logging.info(f"   using mutual information function {mutualInfo.__name__}")
 
         if filename:
-            logging.info(f"Dumping EmergenceCalc object with all pairwise MI to {name}_calc.pkl")
+            logging.info(f"Dumping EmergenceCalc object with all pairwise MI to {filename}_calc.pkl")
             with open(f"{filename}_calc.pkl", 'wb') as f:
-                f.dump(self, f, pickle.HIGHEST_PROTOCOL)
+                pickle.dump(self, f, pickle.HIGHEST_PROTOCOL)
 
         logging.info('Done.')
 
